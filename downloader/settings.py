@@ -27,10 +27,7 @@ SECRET_KEY = 'django-insecure-#26@6v@(lj&12ab*aw=!(hb$n1)0b!i_got3h%p_#4**fs&&vy
 DEBUG = True
 
 ALLOWED_HOSTS = [
-    "skkhandokar21.pythonanywhere.com", 
-    "localhost", 
-    "127.0.0.1",
-    "videovoult.vercel.com"
+    '*'
 ]
 
 
