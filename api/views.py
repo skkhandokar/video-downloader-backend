@@ -127,11 +127,25 @@ def get_video_info(request):
 
     # yt-dlp অপশন: ফেসবুকের জন্য 'format': 'best' দেওয়া ভালো
     ydl_opts = {
-        'quiet': True,
-        'noplaylist': True,
-        'format': 'best', # ফেসবুক এবং ইউটিউব উভয় ক্ষেত্রে ভালো রেজাল্ট দেয়
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    }
+    'quiet': True,
+    'noplaylist': True,
+    'format': 'best',
+    'nocheckcertificate': True,
+    'cachedir': False,
+    # ইউটিউব বট ডিটেকশন এড়াতে এই হেডারগুলো যোগ করুন
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-us,en;q=0.5',
+        'Sec-Fetch-Mode': 'navigate',
+    },
+    # প্রক্সি এরর বা বট ডিটেকশন কমাতে এটি সাহায্য করতে পারে
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['android', 'web'],
+        }
+    },
+}
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
