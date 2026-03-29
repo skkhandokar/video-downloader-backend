@@ -92,6 +92,37 @@ DATABASES = {
 
 CORS_ALLOW_ALL_ORIGINS = True  # এটি ট্রু থাকলে সব ডোমেইন থেকে এক্সেস পাবে
 CORS_ALLOW_CREDENTIALS = True
+
+# --- CORS Configuration ---
+
+# সব ডোমেইন থেকে রিকোয়েস্ট এক্সেপ্ট করবে
+CORS_ALLOW_ALL_ORIGINS = True 
+
+# কুকি বা ক্রেডেনশিয়াল পাঠানোর অনুমতি (যদি দরকার হয়)
+CORS_ALLOW_CREDENTIALS = True
+
+# যে যে মেথডগুলো এলাউড
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+
+# যে যে হেডারগুলো এলাউড (এটি যোগ করা ভালো, নাহলে অনেক সময় কাস্টম হেডার ব্লক হয়)
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
