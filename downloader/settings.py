@@ -26,7 +26,12 @@ SECRET_KEY = 'django-insecure-#26@6v@(lj&12ab*aw=!(hb$n1)0b!i_got3h%p_#4**fs&&vy
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    "skkhandokar21.pythonanywhere.com", 
+    "localhost", 
+    "127.0.0.1",
+    "videovoult.vercel.com"
+]
 
 
 # Application definition
@@ -46,18 +51,16 @@ CORS_EXPOSE_HEADERS = [
     'Content-Length',
     'Content-Range',
 ]
+
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware', # একদম উপরে
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
+    'django.middleware.common.CommonMiddleware', # একবারই যথেষ্ট
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    
-
-    'django.middleware.common.CommonMiddleware',
 ]
 
 ROOT_URLCONF = 'downloader.urls'
@@ -90,7 +93,8 @@ DATABASES = {
     }
 }
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = True  # এটি ট্রু থাকলে সব ডোমেইন থেকে এক্সেস পাবে
+CORS_ALLOW_CREDENTIALS = True
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
