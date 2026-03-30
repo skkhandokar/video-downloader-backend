@@ -129,16 +129,20 @@ def get_video_info(request):
     
     ydl_opts = {
     'quiet': True,
-    'noplaylist': True,
     'format': 'best',
     'nocheckcertificate': True,
     'cachedir': False,
-    'username': 'oauth2', # এটি যোগ করুন
-    'password': '',       # এটি খালি রাখুন
+    # কুকি ফাইলটি অবশ্যই রেন্ডারের 'Secret Files'-এ আপডেট করে রাখুন
+    'cookiefile': os.path.join(settings.BASE_DIR, 'cookies.txt'), 
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+    },
     'extractor_args': {
         'youtube': {
-            'player_client': ['ios', 'web'],
-            'player_skip': ['webpage', 'configs'],
+            # ইউটিউব এখন 'ios' ক্লায়েন্টকে কম ব্লক করে
+            'player_client': ['ios'],
+            # PoToken জেনারেট করার চেষ্টা করবে
+            'po_token': ['web+https://www.youtube.com/'],
         }
     },
 }

@@ -1,5 +1,7 @@
 {
+  "name": "video-downloader-backend",
+  "version": "1.0.0",
   "dependencies": {
-    "node": "latest"
+    "node": "^20.0.0"
   }
 }
