@@ -126,32 +126,22 @@ def get_video_info(request):
     if not url:
         return Response({"error": "URL is required"}, status=400)
 
-    cookie_path = os.path.join(settings.BASE_DIR, 'cookies.txt')
+    
     ydl_opts = {
-        'quiet': True,
-        'noplaylist': True,
-        'format': 'best',
-        'nocheckcertificate': True,
-        'cachedir': False,
-        
-        # কুকিজ ফাইলের পাথ এখানে দেওয়া হলো
-        'cookiefile': cookie_path, 
-        
-        # ইউটিউব বট ডিটেকশন এড়াতে হেডার
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
-            'Sec-Fetch-Mode': 'navigate',
-        },
-        
-        # এক্সট্রাক্টর আর্গুমেন্ট
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web'],
-            }
-        },
-    }
+    'quiet': True,
+    'noplaylist': True,
+    'format': 'best',
+    'nocheckcertificate': True,
+    'cachedir': False,
+    'username': 'oauth2', # এটি যোগ করুন
+    'password': '',       # এটি খালি রাখুন
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['ios', 'web'],
+            'player_skip': ['webpage', 'configs'],
+        }
+    },
+}
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
