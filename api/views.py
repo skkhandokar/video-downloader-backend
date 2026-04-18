@@ -1,14 +1,51 @@
 import yt_dlp
-import os
-import re
 import requests
+import re
+import os
 from django.conf import settings
 from django.http import StreamingHttpResponse, HttpResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-# --- ১. ভিডিও ইনফরমেশন API ---
+# --- Invidious Helper Function ---
+def get_info_from_invidious(video_id):
+    # ইনভিয়াস এর কিছু নির্ভরযোগ্য পাবলিক ইন্সট্যান্স
+    instances = [
+        "https://inv.tux.rs",
+        "https://invidious.asir.dev",
+        "https://iv.melmac.space",
+        "https://invidious.perennialte.ch"
+    ]
+    
+    for instance in instances:
+        try:
+            api_url = f"{instance}/api/v1/videos/{video_id}"
+            res = requests.get(api_url, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                formats = []
+                # ইনভিয়াস ফরম্যাটগুলোকে আপনার ফ্রন্টএন্ডের উপযোগী করে সাজানো
+                for f in data.get("formatStreams", []):
+                    formats.append({
+                        "quality": f.get("qualityLabel") or f.get("quality"),
+                        "format_id": "invidious_" + f.get("itag", ""), # আইডেন্টিফায়ার
+                        "ext": "mp4",
+                        "size": "Unknown",
+                        "url": f.get("url") # সরাসরি ডাউনলোড লিঙ্ক
+                    })
+                
+                return {
+                    "title": data.get("title"),
+                    "thumbnail": data.get("videoThumbnails")[0]["url"] if data.get("videoThumbnails") else "",
+                    "formats": formats,
+                    "source": "invidious"
+                }
+        except:
+            continue
+    return None
+
+# --- ১. ভিডিওর ইনফরমেশন পাওয়ার জন্য API ---
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def get_video_info(request):
@@ -16,94 +53,85 @@ def get_video_info(request):
     if not url:
         return Response({"error": "URL is required"}, status=400)
 
+    # ভিডিও আইডি এক্সট্রাক্ট করা
+    video_id_match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
+    video_id = video_id_match.group(1) if video_id_match else None
+
+    # প্রথমে yt-dlp দিয়ে চেষ্টা
     ydl_opts = {
         'quiet': True,
-        'no_warnings': True,
-        'nocheckcertificate': True,
-        # 'cookies.txt' ফাইলটি অবশ্যই প্রোজেক্টের মেইন ফোল্ডারে রাখবেন
+        'format': 'best',
         'cookiefile': os.path.join(settings.BASE_DIR, 'cookies.txt'),
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'ios'],
-                'player_skip': ['web_embedded_launch_config'],
-            }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Android 14; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0',
-        }
+        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            formats = info.get("formats", [])
-            
             video_formats = []
-            for f in formats:
-                # 'acodec' != 'none' মানে হলো ভিডিওতে অডিও আছে (Progressive)
-                # ইউটিউবে ১০৮০পি এর উপরের ভিডিওতে অডিও আলাদা থাকে, তাই আমরা best এবং progressive দুইটাই নিব
-                if f.get('vcodec') != 'none' and f.get('ext') == 'mp4':
+            for f in info.get("formats", []):
+                if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
                     filesize = f.get("filesize") or f.get("filesize_approx") or 0
-                    quality = f.get("format_note") or f.get("resolution") or "Standard"
-                    
                     video_formats.append({
-                        "quality": quality,
+                        "quality": f.get("format_note") or f.get("resolution") or "HD",
                         "format_id": f.get("format_id"),
                         "ext": "mp4",
                         "size": f"{round(filesize / (1024*1024), 2)} MB" if filesize else "Unknown"
                     })
-
-            # ডুপ্লিকেট রিমুভ এবং সর্টিং
-            unique_formats = {f['quality']: f for f in video_formats}.values()
-            sorted_formats = sorted(unique_formats, key=lambda x: int(re.search(r'\d+', str(x['quality'])).group()) if re.search(r'\d+', str(x['quality'])) else 0, reverse=True)
-
+            
             return Response({
-                "title": info.get("title", "video"),
+                "title": info.get("title"),
                 "thumbnail": info.get("thumbnail"),
-                "formats": sorted_formats
+                "formats": video_formats,
+                "source": "youtube"
             })
 
     except Exception as e:
-        return Response({"error": str(e)}, status=500)
+        # যদি ইউটিউব ব্লক করে (Bot Error), তবে ইনভিয়াস ব্যবহার করবে
+        if "Sign in to confirm" in str(e) and video_id:
+            print("YouTube blocked. Switching to Invidious...")
+            data = get_info_from_invidious(video_id)
+            if data:
+                return Response(data)
+        
+        return Response({"error": "ইউটিউব বর্তমানে এই ভিডিওটি ব্লক করছে। অনুগ্রহ করে পরে চেষ্টা করুন।"}, status=500)
 
-# --- ২. ডাউনলোড এবং স্ট্রিমিং ফাংশন ---
+# --- ২. ডাউনলোড ফাংশন ---
 def download_file(request):
-    video_url = request.GET.get("url")
+    video_url_input = request.GET.get("url")
     format_id = request.GET.get("format_id")
 
-    if not video_url or not format_id:
-        return HttpResponse("Params missing", status=400)
-
-    ydl_opts = {
-        'format': f'{format_id}+bestaudio/best',
-        'cookiefile': os.path.join(settings.BASE_DIR, 'cookies.txt'),
-        'quiet': True
-    }
+    if not video_url_input or not format_id:
+        return HttpResponse("Missing params", status=400)
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            # সরাসরি স্ট্রিমিং লিঙ্ক (ইউটিউব সার্ভার থেকে)
-            direct_url = info.get('url')
-            filesize = info.get('filesize') or info.get('filesize_approx')
-            
-            clean_title = re.sub(r'[^\w\s-]', '', info.get('title', 'video')).strip().replace(' ', '_')
+        # যদি ইনভিয়াস থেকে ডাউনলোড রিকোয়েস্ট আসে
+        if format_id.startswith("invidious_"):
+            # ইনভিয়াস ফরম্যাট আইডি থেকে সরাসরি লিঙ্ক বের করার জন্য আবার API কল করা যেতে পারে
+            # অথবা ফ্রন্টএন্ড থেকে সরাসরি লিঙ্ক পাঠানো যেতে পারে। 
+            # নিরাপত্তার জন্য আমরা আবার URL বের করছি:
+            video_id_match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", video_url_input)
+            data = get_info_from_invidious(video_id_match.group(1))
+            target_url = next((f['url'] for f in data['formats'] if f['format_id'] == format_id), None)
+            clean_title = data['title']
+        else:
+            # yt-dlp এর মাধ্যমে ইউটিউব থেকে লিঙ্ক বের করা
+            ydl_opts = {'format': format_id, 'quiet': True, 'cookiefile': os.path.join(settings.BASE_DIR, 'cookies.txt')}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(video_url_input, download=False)
+                target_url = info.get('url')
+                clean_title = info.get('title')
 
-        def stream_iterator(url):
-            headers = {'User-Agent': 'Mozilla/5.0 (Android 14; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0'}
-            with requests.get(url, headers=headers, stream=True, timeout=120) as r:
+        # স্ট্রিমিং রেসপন্স
+        def stream_generator(url):
+            with requests.get(url, stream=True, timeout=120) as r:
                 r.raise_for_status()
-                for chunk in r.iter_content(chunk_size=1024 * 64): # ৬৪ কেবি চাঙ্ক
-                    if chunk:
-                        yield chunk
+                for chunk in r.iter_content(chunk_size=1024 * 64):
+                    yield chunk
 
-        response = StreamingHttpResponse(stream_iterator(direct_url), content_type='application/octet-stream')
-        if filesize:
-            response['Content-Length'] = filesize
-        response['Content-Disposition'] = f'attachment; filename="{clean_title}.mp4"'
-        # CORS এর জন্য এই হেডারগুলো জরুরি
-        response['Access-Control-Expose-Headers'] = 'Content-Length, Content-Disposition'
+        response = StreamingHttpResponse(stream_generator(target_url), content_type='video/mp4')
+        response['Content-Disposition'] = f'attachment; filename="video.mp4"'
         return response
 
     except Exception as e:
-        return HttpResponse(str(e), status=500)
+        return HttpResponse(f"Error: {str(e)}", status=500)
