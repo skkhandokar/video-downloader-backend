@@ -3,49 +3,49 @@ import requests
 import re
 import os
 from django.conf import settings
-from django.http import StreamingHttpResponse, HttpResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-# --- Invidious Helper Function ---
+# নির্ভরযোগ্য ইনভিয়াস ইন্সট্যান্স লিস্ট
+INVIDIOUS_INSTANCES = [
+    "https://inv.tux.rs",
+    "https://invidious.asir.dev",
+    "https://iv.melmac.space",
+    "https://invidious.perennialte.ch",
+    "https://yewtu.be"
+]
+
 def get_info_from_invidious(video_id):
-    # ইনভিয়াস এর কিছু নির্ভরযোগ্য পাবলিক ইন্সট্যান্স
-    instances = [
-        "https://inv.tux.rs",
-        "https://invidious.asir.dev",
-        "https://iv.melmac.space",
-        "https://invidious.perennialte.ch"
-    ]
-    
-    for instance in instances:
+    for instance in INVIDIOUS_INSTANCES:
         try:
             api_url = f"{instance}/api/v1/videos/{video_id}"
-            res = requests.get(api_url, timeout=5)
+            res = requests.get(api_url, timeout=7) # টাইমআউট একটু বাড়ানো হয়েছে
             if res.status_code == 200:
                 data = res.json()
                 formats = []
-                # ইনভিয়াস ফরম্যাটগুলোকে আপনার ফ্রন্টএন্ডের উপযোগী করে সাজানো
+                # ইনভিয়াস থেকে ভিডিও+অডিও কম্বাইন্ড ফরম্যাটগুলো নেওয়া
                 for f in data.get("formatStreams", []):
                     formats.append({
-                        "quality": f.get("qualityLabel") or f.get("quality"),
-                        "format_id": "invidious_" + f.get("itag", ""), # আইডেন্টিফায়ার
+                        "quality": f.get("qualityLabel") or f.get("quality", "HD"),
+                        "format_id": "invidious_" + str(f.get("itag", "default")),
                         "ext": "mp4",
                         "size": "Unknown",
-                        "url": f.get("url") # সরাসরি ডাউনলোড লিঙ্ক
+                        "url": f.get("url")
                     })
                 
-                return {
-                    "title": data.get("title"),
-                    "thumbnail": data.get("videoThumbnails")[0]["url"] if data.get("videoThumbnails") else "",
-                    "formats": formats,
-                    "source": "invidious"
-                }
-        except:
+                if formats: # যদি অন্তত একটি ফরম্যাট পাওয়া যায়
+                    return {
+                        "title": data.get("title", "YouTube Video"),
+                        "thumbnail": data.get("videoThumbnails", [{}])[0].get("url", ""),
+                        "formats": formats,
+                        "source": "invidious"
+                    }
+        except Exception as e:
+            print(f"Invidious instance {instance} failed: {str(e)}")
             continue
     return None
 
-# --- ১. ভিডিওর ইনফরমেশন পাওয়ার জন্য API ---
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def get_video_info(request):
@@ -53,13 +53,14 @@ def get_video_info(request):
     if not url:
         return Response({"error": "URL is required"}, status=400)
 
-    # ভিডিও আইডি এক্সট্রাক্ট করা
-    video_id_match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
+    # ভিডিও আইডি এক্সট্রাক্ট করা (Regex উন্নত করা হয়েছে)
+    video_id_match = re.search(r"(?:v=|\/|embed\/|youtu.be\/)([0-9A-Za-z_-]{11})", url)
     video_id = video_id_match.group(1) if video_id_match else None
 
-    # প্রথমে yt-dlp দিয়ে চেষ্টা
+    # ১. প্রথমে yt-dlp দিয়ে চেষ্টা
     ydl_opts = {
         'quiet': True,
+        'no_warnings': True,
         'format': 'best',
         'cookiefile': os.path.join(settings.BASE_DIR, 'cookies.txt'),
         'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
@@ -70,6 +71,7 @@ def get_video_info(request):
             info = ydl.extract_info(url, download=False)
             video_formats = []
             for f in info.get("formats", []):
+                # ভিডিও এবং অডিও দুটোই আছে এমন ফরম্যাট ফিল্টার করা
                 if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
                     filesize = f.get("filesize") or f.get("filesize_approx") or 0
                     video_formats.append({
@@ -87,51 +89,18 @@ def get_video_info(request):
             })
 
     except Exception as e:
-        # যদি ইউটিউব ব্লক করে (Bot Error), তবে ইনভিয়াস ব্যবহার করবে
-        if "Sign in to confirm" in str(e) and video_id:
-            print("YouTube blocked. Switching to Invidious...")
-            data = get_info_from_invidious(video_id)
-            if data:
-                return Response(data)
+        error_str = str(e)
+        print(f"yt-dlp error: {error_str}")
         
-        return Response({"error": "ইউটিউব বর্তমানে এই ভিডিওটি ব্লক করছে। অনুগ্রহ করে পরে চেষ্টা করুন।"}, status=500)
-
-# --- ২. ডাউনলোড ফাংশন ---
-def download_file(request):
-    video_url_input = request.GET.get("url")
-    format_id = request.GET.get("format_id")
-
-    if not video_url_input or not format_id:
-        return HttpResponse("Missing params", status=400)
-
-    try:
-        # যদি ইনভিয়াস থেকে ডাউনলোড রিকোয়েস্ট আসে
-        if format_id.startswith("invidious_"):
-            # ইনভিয়াস ফরম্যাট আইডি থেকে সরাসরি লিঙ্ক বের করার জন্য আবার API কল করা যেতে পারে
-            # অথবা ফ্রন্টএন্ড থেকে সরাসরি লিঙ্ক পাঠানো যেতে পারে। 
-            # নিরাপত্তার জন্য আমরা আবার URL বের করছি:
-            video_id_match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", video_url_input)
-            data = get_info_from_invidious(video_id_match.group(1))
-            target_url = next((f['url'] for f in data['formats'] if f['format_id'] == format_id), None)
-            clean_title = data['title']
-        else:
-            # yt-dlp এর মাধ্যমে ইউটিউব থেকে লিঙ্ক বের করা
-            ydl_opts = {'format': format_id, 'quiet': True, 'cookiefile': os.path.join(settings.BASE_DIR, 'cookies.txt')}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(video_url_input, download=False)
-                target_url = info.get('url')
-                clean_title = info.get('title')
-
-        # স্ট্রিমিং রেসপন্স
-        def stream_generator(url):
-            with requests.get(url, stream=True, timeout=120) as r:
-                r.raise_for_status()
-                for chunk in r.iter_content(chunk_size=1024 * 64):
-                    yield chunk
-
-        response = StreamingHttpResponse(stream_generator(target_url), content_type='video/mp4')
-        response['Content-Disposition'] = f'attachment; filename="video.mp4"'
-        return response
-
-    except Exception as e:
-        return HttpResponse(f"Error: {str(e)}", status=500)
+        # ২. ইউটিউব ব্লক করলে ইনভিয়াস ট্রাই করা
+        if video_id:
+            print(f"Attempting Invidious for video: {video_id}")
+            invidious_data = get_info_from_invidious(video_id)
+            if invidious_data:
+                return Response(invidious_data)
+        
+        # ৩. সব ফেল করলে ইউজারকে পরিষ্কার মেসেজ দেওয়া
+        return Response({
+            "error": "YouTube high security detected. Please try another link or wait a few minutes.",
+            "details": error_str[:100] # ডিবাগিংয়ের জন্য ছোট ডিটেইলস
+        }, status=500)
